@@ -10,18 +10,18 @@ all:
 	 	@echo 'WINDOWS USERS: make win'
 macosx:	
 		@echo 'Buildling iRecovery (Mac Os X)'
-		@$(CC) irecovery.c -o irecovery $(CFLAGS_OSX)
-		@echo 'Successfully built iRecovery'
+		@$(CC) sigbypassipx.c -o sigbypassipx $(CFLAGS_OSX)
+		@echo 'Successfully built sigbypass'
 linux:
 		@echo 'Buildling iRecovery (Linux)'
-		@$(CC) irecovery.c -o irecovery $(CFLAGS_LNX)
-		@echo 'Successfully built iRecovery'
+		@$(CC) sigbypassipx.c -o sigbypassipx $(CFLAGS_LNX)
+		@echo 'Successfully built sigbypass'
 win:
 		@echo 'Buildling iRecovery (Windows)'
-		@$(CC) irecovery.c -o irecovery -I "C:\MinGW\include" -L "C:\MinGW\lib" $(CFLAGS_WIN)
-		@echo 'Successfully built iRecovery'
+		@$(CC) sigbypassipx.c -o sigbypassipx -I "C:\MinGW\include" -L "C:\MinGW\lib" $(CFLAGS_WIN)
+		@echo 'Successfully built sigbypass'
 clean:
 		@echo 'Cleaning...'
-		@rm -rf *.o irecovery
+		@rm -rf *.o sigbypassipx
 		@echo 'Cleaning finished.'
 

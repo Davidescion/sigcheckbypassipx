@@ -52,6 +52,34 @@ void device_connect() {
 
 }
 
+static void display_buffer_hex(unsigned char *buffer, unsigned size)
+{
+    unsigned i, j, k;
+    
+    for (i=0; i<size; i+=16) {
+        printf("\n  %08x  ", i);
+        for(j=0,k=0; k<16; j++,k++) {
+            if (i+j < size) {
+                printf("%02x", buffer[i+j]);
+            } else {
+                printf("  ");
+            }
+            printf(" ");
+        }
+        printf(" ");
+        for(j=0,k=0; k<16; j++,k++) {
+            if (i+j < size) {
+                if ((buffer[i+j] < 32) || (buffer[i+j] > 126)) {
+                    printf(".");
+                } else {
+                    printf("%c", buffer[i+j]);
+                }
+            }
+        }
+    }
+    printf("\n" );
+}
+
 void device_close() {
 
 	if (device != NULL) {
@@ -69,138 +97,23 @@ void device_reset() {
 	}
 
 }
-
 int device_sendcmd(char* argv[]) {
-
-	char* command = argv[0];
-	size_t length = strlen(command);
-	
-	if (length >= 0x200) {
-		printf("[Device] Failed to send command (to long).");
-		return -1;
-	}
-	
-	if (! libusb_control_transfer(device, 0x40, 0, 0, 0, command, (length + 1), 1000)) {
-		printf("[Device] Failed to send command.\r\n");
-		return -1;
-	}
-	
-	return 1;
-	
-}
-
-int device_autoboot() {
-
-	printf("[Device] Enabling auto-boot.\r\n");
-	
-	char* command[3];
-	command[0] = "setenv auto-boot true";
-	command[1] = "saveenv";
-	command[2] = "reboot";
-	
-	device_sendcmd(&command[0]);
-	device_sendcmd(&command[1]);
-	device_sendcmd(&command[2]);
-	
-	return 1;
-	
-}
-
-int device_upload(char* filename) {
-	
-	FILE* file = fopen(filename, "rb");
-	
-	if(file == NULL) {
-		
-		printf("[Program] Unable to find file. (%s)\r\n",filename);
-		return 1;
-		
-	}
- 
-	fseek(file, 0, SEEK_END);
-	unsigned int len = ftell(file);
-	fseek(file, 0, SEEK_SET);
- 
-	char* buffer = malloc(len);
- 
-	if (buffer == NULL) {
-		
-		printf("[Program] Error allocating memory.\r\n");
-		fclose(file);
-		return 1;
-	
-	}
- 
-	fread(buffer, 1, len, file);
-	fclose(file);
- 
-	int packets = len / 0x800;
-	
-	if(len % 0x800)
-		packets++;
- 
-	int last = len % 0x800;
-	
-	if(!last)
-		last = 0x800;
-
-	int i = 0;
-	unsigned int sizesent=0;
-	char response[6];
- 
-	for(i = 0; i < packets; i++) {
-		
-		int size = i + 1 < packets ? 0x800 : last;
- 
-		sizesent+=size;
-		printf("[Device] Sending packet %d of %d (0x%08x of 0x%08x bytes)/", i+1, packets, sizesent, len);
-		
-		if(! libusb_control_transfer(device, 0x21, 1, i, 0, &buffer[i * 0x800], size, 1000)) {
-			
-			printf("[Device] Error sending packet.\r\n");
-			return -1;
-		
-		}
- 
-		if( libusb_control_transfer(device, 0xA1, 3, 0, 0, response, 6, 1000) != 6) {
-		
-			printf("[Device] Error receiving status while uploading file.\r\n");
-			return -1;
-		
-		}
- 
-		if(response[4] != 5) {
-	
-			printf("[Device] Invalid status error during file upload.\r\n");
-			return -1;
-		}
-			
-		printf("[Device] Upload successfull.\r\n");
-	}
-	
-	printf("[Device] Executing file.\r\n");
- 
-	libusb_control_transfer(device, 0x21, 1, i, 0, buffer, 0, 1000);
-	
-	for(i = 6; i <= 8; i++) {
-		
-		if(libusb_control_transfer(device, 0xA1, 3, 0, 0, response, 6, 1000) != 6) {
-			
-			printf("[Device] Error receiving execution status.\r\n");
-			return -1;
-		}
-			
-		if(response[4] != i) {
-				
-			printf("[Device] Invalid execution status.\r\n");
-			return -1;
-		}
-	}
- 
-	printf("[Device] Successfully executed file.\r\n");
- 
-	free(buffer);
-	return 0;
+    
+    char* command = argv[0];
+    size_t length = strlen(command);
+    
+    if (length >= 0x200) {
+        printf("[Device] Failed to send command (too long).");
+        return -1;
+    }
+    
+    if (! libusb_control_transfer(device, 0x40, 0, 0, 0, command, (length + 1), 1000)) {
+        printf("[Device] Failed to send command.\r\n");
+        return -1;
+    }
+    
+    return 1;
+    
 }
 
 int device_buffer(char* data, int len) {
@@ -263,29 +176,6 @@ int device_buffer(char* data, int len) {
 	
 	return 0;
 }
-
-int device_exploit(char* payload) {
-	
-	if(payload != NULL) {
-		
-		if(device_upload(payload) < 0) {
-		
-			printf("[Device] Error uploading payload.\r\n");
-			return -1;
-		
-		}
-	}
-    
-	if(!libusb_control_transfer(device, 0x21, 2, 0, 0, 0, 0, 1000)) {
-		
-		printf("[Device] Error sending exploit.\r\n");
-		return -1;
-	
-	}
-	
-	return 0;
-}
-
 int device_sendrawusb0xA1(char *command) {
 	
 	printf("[Device] Sending raw command to 0xA1, x, 0, 0, 0, 0, 1000.\r\n", libusb_control_transfer(device, 0xA1, atoi(command), 0, 0, 0, 0, 1000));
@@ -303,22 +193,92 @@ int device_sendrawusb0x21(char *command) {
 	printf("[Device] Sending raw command to 0x21, x, 0, 0, 0, 0, 1000.\r\n", libusb_control_transfer(device, 0x21, atoi(command), 0, 0, 0, 0, 1000));
 	
 }
-
-int device_sigbypass() {
-    printf("[Device] Sending raw command to 0x21, 1, 0, 0, x, 0, 1000.\r\n", libusb_control_transfer(device, 0x21, 1, 0, 0, "cmemcmem\x00\x00\x00\x00\x00\x00\x00\x00hh\x00\x00\x01\x00\x00\x00R\x80\x00!\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00", 0, 1000));
-    printf("[Device] Sending raw command to 0x21, 1, 0, 0, x, 0, 1000.\r\n", libusb_control_transfer(device, 0x21, 1, 0, 0, "cmemcmem\x00\x00\x00\x00\x00\x00\x00\x00lh\x00\x00\x01\x00\x00\x00\xb9\x01#\xe1\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00", 0, 1000));
-    printf("[Device] Sending raw command to 0x21, 1, 0, 0, x, 0, 1000.\r\n", libusb_control_transfer(device, 0x21, 1, 0, 0, "cmemcmem\x00\x00\x00\x00\x00\x00\x00\x00ph\x00\x00\x01\x00\x00\x00\xb9\x01'\xe1\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00", 0, 1000));
-    printf("[Device] Sending raw command to 0x21, 1, 0, 0, x, 0, 1000.\r\n", libusb_control_transfer(device, 0x21, 1, 0, 0, "cmemcmem\x00\x00\x00\x00\x00\x00\x00\x00th\x00\x00\x01\x00\x00\x00\xd5\x03 \x1f\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00", 0, 1000));
-    printf("[Device] Sending raw command to 0x21, 1, 0, 0, x, 0, 1000.\r\n", libusb_control_transfer(device, 0x21, 1, 0, 0, "cmemcmem\x00\x00\x00\x00\x00\x00\x00\x00|h\x00\x00\x01\x00\x00\x00\xd5\x03 \x1f\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00", 0, 1000));
-    printf("[Device] Sending raw command to 0x21, 1, 0, 0, x, 0, 1000.\r\n", libusb_control_transfer(device, 0x21, 1, 0, 0, "cmemcmem\x00\x00\x00\x00\x00\x00\x00\x00\x80h\x00\x00\x01\x00\x00\x00\xd5\x03 \x1f\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00", 0, 1000));
-    printf("[Device] Sending raw command to 0x21, 1, 0, 0, x, 0, 1000.\r\n", libusb_control_transfer(device, 0x21, 1, 0, 0, "cmemcmem\x00\x00\x00\x00\x00\x00\x00\x00\x84h\x00\x00\x01\x00\x00\x00\xd5\x03 \x1f\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00", 0, 1000));
-    printf("[Device] Sending raw command to 0x21, 1, 0, 0, x, 0, 1000.\r\n", libusb_control_transfer(device, 0x21, 1, 0, 0, "cmemcmem\x00\x00\x00\x00\x00\x00\x00\x00\xe0\xf1\x00\x00\x01\x00\x00\x00\xd2\xe0\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00", 0, 1000));
-    printf("[Device] Sending raw command to 0x21, 1, 0, 0, x, 0, 1000.\r\n", libusb_control_transfer(device, 0x21, 1, 0, 0, "cmemcmem\x00\x00\x00\x00\x00\x00\x00\x00\xe4\xf1\x00\x00\x01\x00\x00\x00\xd6_\x03\xc0\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00", 0, 1000));
-    printf("[Device] Sending raw command to 0x21, 1, 0, 0, x, 0, 1000.\r\n", libusb_control_transfer(device, 0x21, 1, 0, 0, 0, 0, 1000));
+void device_debugbypass() {
+    char response[6];
+    char response2[16];
+    char response3[255];
+    char response4[254];
+    char kok[160];
+    printf("[Device] Wrote %d bytes \r\n", libusb_control_transfer(device, 0x21, 1, 0, 0, '\0' * 16, 0, 100));
+    printf("[Device] Wrote %d bytes \r\n", libusb_control_transfer(device, 0x21, 1, 1, 0, 0, 0, 100));
+    printf("[Device] Wrote %d bytes \r\n", libusb_control_transfer(device, 0xA1, 3, 0, 0, response, 6, 100));
+    printf("%d\n", response[4]);
+    printf("[Device] Wrote %d bytes \r\n", libusb_control_transfer(device, 0xA1, 3, 0, 0, response, 6, 100));
+    printf("%d\n", response[4]);
+    printf("[Device] Wrote %d bytes \r\n", libusb_control_transfer(device, 0xA1, 3, 0, 0, response, 6, 100));
+    printf("%d\n", response[4]);
+    signed int lal = libusb_control_transfer(device, 0x80, 6, 768, 0,  response4, 254, 1000);
+    printf("%d\n",lal);
+    signed int lel = libusb_control_transfer(device, 0x80, 6, 768, 0,  response3, 255, 1000);
+    printf("%d\n",lel);
+    signed int lil = libusb_control_transfer(device, 0x21, 1, 0, 0,  response2, 16, 5000);
+    printf("%d\n",lil);
+    signed int lol = libusb_control_transfer(device, 0x21, 1, 0, 0,  '\0' * 16, 0, 100);
+    printf("%d\n",lol);
+    signed int lul = libusb_control_transfer(device, 0xA1, 3, 0, 0,  response, 6, 100);
+    printf("%d\n",lul);
+    signed int kak = libusb_control_transfer(device, 0xA1, 3, 0, 0,  response, 6, 100);
+    printf("%d\n",kak);
+    signed int kek = libusb_control_transfer(device, 0x21, 1, 0, 0,  "\x63\x6d\x65\x6d\x63\x6d\x65\x6d\x00\x00\x00\x00\x00\x00\x00\x00\x10\xc0\x01\x80\x01\x00\x00\x00\x68\x68\x00\x00\x01\x00\x00\x00\x90\x00\x00\x00\x00\x00\x00\x00", 40, 5000);
+    printf("%d\n",kek);
+    signed int kik = libusb_control_transfer(device, 0xA1, 2, 0xFFFF, 0, kok, 160, 5000);
+    printf("%d\n",kik);
     
-    printf("[Device] Sending raw command to 0xA1, x, 0, 0, 0, 0, 1000.\r\n", libusb_control_transfer(device, 0xA1, 3, 0, 0, 6, 0, 1000));
-    printf("[Device] Sending raw command to 0xA1, x, 0, 0, 0, 0, 1000.\r\n", libusb_control_transfer(device, 0xA1, 3, 0, 0, 6, 0, 1000));
-    printf("[Device] Sending raw command to 0x21, x, 0, 0, 0, 0, 1000.\r\n", libusb_control_transfer(device, 0x21, 0xA1, 0, 0, 0, 0, 0));
+    printf(kok);
+    display_buffer_hex(kok, 160);
+}
+
+void device_sigbypass() {
+    char response[6];
+    printf("[Device] Wrote %d bytes \r\n", libusb_control_transfer(device, 0x21, 1, 0, 0, '\0' * 16, 0, 100));
+    printf("[Device] Wrote %d bytes \r\n", libusb_control_transfer(device, 0x21, 1, 1, 0, 0, 0, 100));
+    printf("[Device] Wrote %d bytes \r\n", libusb_control_transfer(device, 0xA1, 3, 0, 0, response, 6, 100));
+    printf("%d\n", response[4]);
+    printf("[Device] Wrote %d bytes \r\n", libusb_control_transfer(device, 0xA1, 3, 0, 0, response, 6, 100));
+    printf("%d\n", response[4]);
+    printf("[Device] Wrote %d bytes \r\n", libusb_control_transfer(device, 0xA1, 3, 0, 0, response, 6, 100));
+    printf("%d\n", response[4]);
+    printf("[Device] Wrote %d bytes \r\n", libusb_control_transfer(device, 0x21, 1, 0, 0, "\x63\x6d\x65\x6d\x63\x6d\x65\x6d\x00\x00\x00\x00\x00\x00\x00\x00\x68\x68\x00\x00\x01\x00\x00\x00\x28\xc0\x01\x80\x01\x00\x00\x00\x04\x00\x00\x00\x00\x00\x00\x00\x21\x00\x80\x52", 44, 1000));
+    printf("[Device] Wrote %d bytes \r\n", libusb_control_transfer(device, 0xA1, 3, 0, 0, response, 6, 100));
+    printf("%d\n", response[4]);
+    printf("[Device] Wrote %d bytes \r\n", libusb_control_transfer(device, 0x21, 1, 1, 0, "\x63\x6d\x65\x6d\x63\x6d\x65\x6d\x00\x00\x00\x00\x00\x00\x00\x00\x6c\x68\x00\x00\x01\x00\x00\x00\x28\xc0\x01\x80\x01\x00\x00\x00\x04\x00\x00\x00\x00\x00\x00\x00\xe1\x23\x01\xb9", 44, 1000));
+    printf("[Device] Wrote %d bytes \r\n", libusb_control_transfer(device, 0xA1, 3, 0, 0, response, 6, 100));
+    printf("%d\n", response[4]);
+    printf("[Device] Wrote %d bytes \r\n", libusb_control_transfer(device, 0x21, 1, 2, 0, "\x63\x6d\x65\x6d\x63\x6d\x65\x6d\x00\x00\x00\x00\x00\x00\x00\x00\x70\x68\x00\x00\x01\x00\x00\x00\x28\xc0\x01\x80\x01\x00\x00\x00\x04\x00\x00\x00\x00\x00\x00\x00\xe1\x27\x01\xb9", 44, 1000));
+    printf("[Device] Wrote %d bytes \r\n", libusb_control_transfer(device, 0xA1, 3, 0, 0, response, 6, 100));
+    printf("%d\n", response[4]);
+    printf("[Device] Wrote %d bytes \r\n", libusb_control_transfer(device, 0x21, 1, 3, 0, "\x63\x6d\x65\x6d\x63\x6d\x65\x6d\x00\x00\x00\x00\x00\x00\x00\x00\x74\x68\x00\x00\x01\x00\x00\x00\x28\xc0\x01\x80\x01\x00\x00\x00\x04\x00\x00\x00\x00\x00\x00\x00\x1f\x20\x03\xd5", 44, 1000));
+    printf("[Device] Wrote %d bytes \r\n", libusb_control_transfer(device, 0xA1, 3, 0, 0, response, 6, 100));
+    printf("%d\n", response[4]);
+    printf("[Device] Wrote %d bytes \r\n", libusb_control_transfer(device, 0x21, 1, 4, 0, "\x63\x6d\x65\x6d\x63\x6d\x65\x6d\x00\x00\x00\x00\x00\x00\x00\x00\x7c\x68\x00\x00\x01\x00\x00\x00\x28\xc0\x01\x80\x01\x00\x00\x00\x04\x00\x00\x00\x00\x00\x00\x00\x1f\x20\x03\xd5", 44, 1000));
+    printf("[Device] Wrote %d bytes \r\n", libusb_control_transfer(device, 0xA1, 3, 0, 0, response, 6, 100));
+    printf("%d\n", response[4]);
+    printf("[Device] Wrote %d bytes \r\n", libusb_control_transfer(device, 0x21, 1, 5, 0, "\x63\x6d\x65\x6d\x63\x6d\x65\x6d\x00\x00\x00\x00\x00\x00\x00\x00\x80\x68\x00\x00\x01\x00\x00\x00\x28\xc0\x01\x80\x01\x00\x00\x00\x04\x00\x00\x00\x00\x00\x00\x00\x1f\x20\x03\xd5", 44, 1000));
+    printf("[Device] Wrote %d bytes \r\n", libusb_control_transfer(device, 0xA1, 3, 0, 0, response, 6, 100));
+    printf("%d\n", response[4]);
+    printf("[Device] Wrote %d bytes \r\n", libusb_control_transfer(device, 0x21, 1, 6, 0, "\x63\x6d\x65\x6d\x63\x6d\x65\x6d\x00\x00\x00\x00\x00\x00\x00\x00\x84\x68\x00\x00\x01\x00\x00\x00\x28\xc0\x01\x80\x01\x00\x00\x00\x04\x00\x00\x00\x00\x00\x00\x00\x1f\x20\x03\xd5", 44, 1000));
+    printf("[Device] Wrote %d bytes \r\n", libusb_control_transfer(device, 0xA1, 3, 0, 0, response, 6, 100));
+    printf("%d\n", response[4]);
+    printf("[Device] Wrote %d bytes \r\n", libusb_control_transfer(device, 0x21, 1, 7, 0, "\x63\x6d\x65\x6d\x63\x6d\x65\x6d\x00\x00\x00\x00\x00\x00\x00\x00\xe0\xf1\x00\x00\x01\x00\x00\x00\x28\xc0\x01\x80\x01\x00\x00\x00\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\xe0\xd2", 44, 1000));
+    printf("[Device] Wrote %d bytes \r\n", libusb_control_transfer(device, 0xA1, 3, 0, 0, response, 6, 100));
+    printf("%d\n", response[4]);
+    printf("[Device] Wrote %d bytes \r\n", libusb_control_transfer(device, 0x21, 1, 8, 0, "\x63\x6d\x65\x6d\x63\x6d\x65\x6d\x00\x00\x00\x00\x00\x00\x00\x00\xe4\xf1\x00\x00\x01\x00\x00\x00\x28\xc0\x01\x80\x01\x00\x00\x00\x04\x00\x00\x00\x00\x00\x00\x00\xc0\x03\x5f\xd6", 44, 0));
+    printf("[Device] Wrote %d bytes \r\n", libusb_control_transfer(device, 0xA1, 3, 0, 0, response, 6, 100));
+    printf("%d\n", response[4]);
+    printf("[Device] Wrote %d bytes \r\n", libusb_control_transfer(device, 0x21, 1, 9, 0, 0, 0, 100));
+    printf("[Device] Wrote %d bytes \r\n", libusb_control_transfer(device, 0xA1, 3, 0, 0, response, 6, 100));
+    printf("%d\n", response[4]);
+    printf("[Device] Wrote %d bytes \r\n", libusb_control_transfer(device, 0xA1, 3, 0, 0, response, 6, 100));
+    printf("%d\n", response[4]);
+    printf("[Device] Wrote %d bytes \r\n", libusb_control_transfer(device, 0xA1, 3, 0, 0, response, 6, 100));
+    printf("%d\n", response[4]);
+    //printf("[Device] Wrote %d bytes \r\n", libusb_control_transfer(device, 0x21, 4, 10, 0, 0, 0, 0));
+    device_reset();
+    //device_debugbypass();
+}
+
+void device_outpwndfu() {
+    printf("[Device] Wrote %d bytes \r\n", libusb_control_transfer(device, 0x21, 4, 0, 0, 0, 0, 0));
 }
 
 void prog_usage() {
@@ -379,31 +339,12 @@ int prog_parse(char *command) {
 		free(action);
 		return -1;
 	    
-	} else if(strcmp(action, "upload") == 0) {
-		
-		char* filename = strtok(NULL, " ");
-		if(filename != NULL) 
-			device_upload(filename);
-		
-	} else if(strcmp(action, "exploit") == 0) {
-		
-		char* payload = strtok(NULL, " ");
-		
-		if (payload != NULL)
-			device_exploit(payload);
-		else
-		    device_exploit(NULL);
-		
-	} else if (! strcmp(action, "batch")) {
+    } else if (! strcmp(action, "batch")) {
 	
 		char* filename = strtok(NULL, " ");
 		
 		if (filename != NULL)
 			prog_batch(filename);
-			   
-	} else if (! strcmp(action, "auto-boot")) {
-		
-		device_autoboot();
 		
     } else if (! strcmp(action, "sigbypass")) {
         
@@ -577,62 +518,25 @@ int prog_console(char* logfile) {
 
 void prog_handle(int argc, char *argv[]) {
 	
-	if (! strcmp(argv[1], "-a")) {
-		
-		device_autoboot();
-		
-    } else if (! strcmp(argv[1], "-n")) {
+    if (! strcmp(argv[1], "-n")) {
         
         device_sigbypass();
         
-    } else if (! strcmp(argv[1], "-c")) {
-	
-		if (argc >= 3) {
-			
-			if (argc > 3) {
-			
-				char command[0x200];
-				int i = 2;
-				
-				for (i; i < argc; i++) {
-			
-					if (i > 2) strcat(command, " ");
-					strcat(command, argv[i]);
-				
-				}
-				
-				argv[2] = command;
-			}
-				
-			device_sendcmd(&argv[2]);
-			
-		}
-		
-	} else if (! strcmp(argv[1], "-r")) {	
+    } else if (! strcmp(argv[1], "-k")) {
+        
+        device_debugbypass();
+        
+    } else if (! strcmp(argv[1], "-o")) {
+        
+        device_outpwndfu();
+        
+    } else if (! strcmp(argv[1], "-r")) {
 		
 		device_reset();
 		
 	} else if (! strcmp(argv[1], "-b")) {
 	
 		prog_batch(argv[2]);
-		
-	} else if (! strcmp(argv[1], "-u") || ! strcmp(argv[1], "-x")) {
-	
-		if (argc == 3) {
-		
-			device_upload(argv[2]);
-			
-			if (! strcmp(argv[1], "-x")) {
-			
-				device_reset();
-			}
-		}
-	} else if(! strcmp(argv[1], "-e")) {
-		
-		if(argc >= 3)
-			device_exploit(argv[2]);
-		else
-			device_exploit(NULL);
 		
 	} else if (! strcmp(argv[1], "-s")) {
 		
@@ -650,7 +554,7 @@ void prog_handle(int argc, char *argv[]) {
 }
 
 int main(int argc, char *argv[]) {
-	printf("iRecovery - Version: %s - For LIBUSB: %s\n", VERSION, LIBUSB_VERSION);
+	printf("iRecovery modified by davidescion and fatmeowxd - Version: %s - For LIBUSB: %s\n", VERSION, LIBUSB_VERSION);
 	printf("by westbaer. Thanks to pod2g, tom3q, planetbeing, geohot and posixninja.\r\nRewrite by GreySyntax.\n\n");
 	
 	if(argc < 2) {
